@@ -65,7 +65,49 @@ export function Results() {
             return route.dias_operativos.includes(currentDayLabel);
           });
 
-          setTrips(filteredTrips);
+          // 3. Filtrar por Disponibilidad Real (Excluir Agotados)
+          if (filteredTrips.length > 0) {
+              // Rango del día seleccionado para buscar viajes ya creados
+              const startOfDay = new Date(`${date}T00:00:00`).toISOString();
+              // Usamos una fecha muy futura o fin del día para asegurar cobertura, 
+              // pero para ser precisos con la zona horaria local, mejor buscamos por coincidencia de fecha aproximada o traemos todo lo del día.
+              // Dado que guardamos timestamps exactos basados en la fecha + hora_salida de la ruta:
+              
+              // Vamos a consultar los viajes que coincidan con los IDs de las rutas candidatas
+              const routeIds = filteredTrips.map(r => r.id);
+              
+              const { data: existingTrips, error: tripsError } = await supabase
+                .from('viajes')
+                .select('ruta_id, asientos_ocupados, fecha_salida')
+                .in('ruta_id', routeIds)
+                .gte('fecha_salida', startOfDay)
+                .lt('fecha_salida', new Date(`${date}T23:59:59`).toISOString()); 
+
+              if (tripsError) throw tripsError;
+
+              // Filtro final: Si existe viaje y está lleno, lo quitamos.
+              const availableTrips = filteredTrips.filter(route => {
+                  // Reconstruimos la fecha esperada para esa ruta específica para asegurar match
+                  // Nota: Esto asume que la hora_salida no cambia dinámicamente.
+                  const expectedIso = new Date(`${date}T${route.hora_salida}:00`).toISOString();
+                  
+                  // Buscamos si hay un viaje registrado para esta ruta en este horario específico
+                  // (O relajamos la búsqueda solo por ruta_id si sabemos que hay 1 solo viaje x ruta x día)
+                  const tripInstance = existingTrips?.find(t => t.ruta_id === route.id);
+
+                  if (tripInstance) {
+                      const seatsLeft = route.capacidad - tripInstance.asientos_ocupados;
+                      return seatsLeft > 0; // Solo mostramos si hay al menos 1 asiento
+                  }
+                  
+                  // Si no existe el viaje, significa que nadie ha comprado, está 100% libre.
+                  return true;
+              });
+
+              setTrips(availableTrips);
+          } else {
+             setTrips([]);
+          }
         } else {
           setTrips([]);
         }

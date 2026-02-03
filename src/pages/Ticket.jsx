@@ -120,7 +120,7 @@ export function Ticket() {
       // 1. Buscar o Crear VIAJE
       let { data: existingTrip, error: findError } = await supabase
         .from('viajes')
-        .select('id')
+        .select('id, asientos_ocupados') // Traemos también asientos ocupados
         .eq('ruta_id', reservationData.tripId)
         .eq('fecha_salida', fechaSalidaISO)
         .maybeSingle();
@@ -163,6 +163,38 @@ export function Ticket() {
         .single();
 
       if (reservationError) throw reservationError;
+
+      // 4. ACTUALIZAR OCUPACIÓN (INCREMENTAR)
+      // Esto es crucial para que la disponibilidad baje
+      const { error: updateError } = await supabase
+        .from('viajes')
+        .update({ asientos_ocupados: (existingTrip ? existingTrip.asientos_ocupados : 0) + 1 })
+        .eq('id', viajeId);
+
+      // Nota: Si es nueva inserción (existingTrip null), asumimos que inicia en 0 y sumamos 1.
+      // Pero 'existingTrip' solo tiene 'id'. Debemos tener cuidado.
+      // Mejor estrategia: Si era nuevo, ya lo insertamos con 0. Ahora hacemos RPC o lectura fresca.
+      // Como no tenemos RPC a la mano, haremos:
+      // Si era nuevo, ahora tiene 0. update -> 1.
+      // Si existía, necesitamos saber cuántos tenía.
+      // Mejor, hagamos un paso 'atómico' de lectura previa si existía.
+      
+      // Corrección de lógica:
+      // Arriba ya leímos 'existingTrip' pero SOLO su ID.
+      // Vamos a re-leer para asegurar consistencia o usar un RPC de incremento si existiera.
+      // Como no tenemos RPC definido, haremos:
+      // UPDATE viajes SET asientos_ocupados = asientos_ocupados + 1 WHERE id = viajeId
+      // Supabase no soporta "set = col + 1" directamente en el cliente JS sin RPC.
+      // Así que tenemos que leer el valor actual y sumar 1.
+
+      // Paso extra de seguridad: Leer valor actual para sumar
+      const { data: currentTripData } = await supabase.from('viajes').select('asientos_ocupados').eq('id', viajeId).single();
+      const currentOccupied = currentTripData ? currentTripData.asientos_ocupados : 0;
+
+      await supabase
+        .from('viajes')
+        .update({ asientos_ocupados: currentOccupied + 1 })
+        .eq('id', viajeId);
 
       // Enviar Correo de Confirmación
       try {
