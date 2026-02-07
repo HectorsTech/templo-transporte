@@ -144,7 +144,11 @@ export function AdminDashboard() {
     
     // Solo trae viajes a futuro (o hoy) con reservas
     try {
-        const today = new Date().toISOString();
+        const localDate = new Date();
+        const year = localDate.getFullYear();
+        const month = String(localDate.getMonth() + 1).padStart(2, '0');
+        const day = String(localDate.getDate()).padStart(2, '0');
+        const today = `${year}-${month}-${day}`;
         const { data, error } = await supabase
             .from('viajes')
             .select(`
@@ -827,18 +831,34 @@ export function AdminDashboard() {
                                      {reservationsCount > 0 ? (
                                         <div className="space-y-2 mb-6">
                                            {trip.reservas.map(res => (
-                                              <div key={res.id} className="flex justify-between items-center bg-white p-2 rounded border border-gray-200 text-sm">
-                                                 <div>
-                                                    <p className="font-medium text-gray-800">{res.cliente_nombre}</p>
-                                                    <p className="text-xs text-gray-500">{res.cliente_email}</p>
-                                                 </div>
-                                                 <div className="text-right">
-                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${res.validado ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                        {res.validado ? 'Abordó' : 'Pendiente'}
-                                                    </span>
-                                                    <p className="font-mono text-xs text-gray-400 mt-0.5">{res.codigo_visual}</p>
-                                                 </div>
-                                              </div>
+                                               <div key={res.id} className="flex justify-between items-center bg-white p-3 rounded border border-gray-200 text-sm gap-3">
+                                                  <div className="flex-1">
+                                                     <p className="font-medium text-gray-800">{res.cliente_nombre}</p>
+                                                     <p className="text-xs text-gray-500">{res.cliente_email}</p>
+                                                     {res.cliente_telefono && (
+                                                        <p className="text-xs text-gray-400">{res.cliente_telefono}</p>
+                                                     )}
+                                                  </div>
+                                                  <div className="flex items-center gap-2">
+                                                     {res.cliente_telefono && (
+                                                        <a
+                                                          href={`https://wa.me/${formatTelefonoWhatsApp(res.cliente_telefono)}?text=${encodeURIComponent(`Hola ${res.cliente_nombre}, confirmamos tu reserva para el viaje del ${new Date(trip.fecha_salida).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })}. Tu código es: ${res.codigo_visual}`)}`}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                          className="inline-flex items-center gap-1 px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs font-medium transition"
+                                                          title="Contactar por WhatsApp"
+                                                        >
+                                                          <Bus className="w-3 h-3" />
+                                                        </a>
+                                                     )}
+                                                     <div className="text-right">
+                                                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${res.validado ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                            {res.validado ? 'Abordó' : 'Pendiente'}
+                                                        </span>
+                                                        <p className="font-mono text-xs text-gray-400 mt-0.5">{res.codigo_visual}</p>
+                                                     </div>
+                                                  </div>
+                                               </div>
                                            ))}
                                         </div>
                                      ) : (
