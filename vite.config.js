@@ -11,27 +11,35 @@ export default defineConfig({
     obfuscator({
       global: true,
       options: {
-        // Configuración agresiva para que el código sea ilegible
+        // Configuración EQUILIBRADA (Seguridad vs Velocidad)
         compact: true,
-        controlFlowFlattening: true,
-        controlFlowFlatteningThreshold: 0.75,
-        deadCodeInjection: true,
-        deadCodeInjectionThreshold: 0.4,
-        debugProtection: true,
-        debugProtectionInterval: 4000,
-        disableConsoleOutput: true, // Adiós a los console.log chismosos
-        identifierNamesGenerator: 'hexadecimal', // Variables tipo _0x5f3e
+        controlFlowFlattening: false, // Apagado para evitar bloqueo de thread
+        deadCodeInjection: false,     // Apagado para reducir tamaño de bundle
+        debugProtection: false,       // Apagado para evitar ciclos de CPU
+        disableConsoleOutput: true,
+        identifierNamesGenerator: 'hexadecimal',
         log: false,
-        numbersToExpressions: true,
+        numbersToExpressions: false, // Apagado para mejor parsing
         rotateStringArray: true,
-        selfDefending: true,
+        selfDefending: false,        // Apagado, causa muchos problemas de performance
         shuffleStringArray: true,
-        splitStrings: true,
+        splitStrings: false,
         stringArray: true,
-        stringArrayEncoding: ['base64', 'rc4'], // Encripta textos como tu contraseña
-        stringArrayThreshold: 0.75,
-        unicodeEscapeSequence: false
+        stringArrayEncoding: ['rc4'],
+        stringArrayThreshold: 0.5,
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          ui: ['lucide-react'],
+          supabase: ['@supabase/supabase-js']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1000
+  }
 })
