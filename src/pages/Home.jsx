@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bus, MapPin, Loader2, Clock, ArrowRight, Users, ChevronRight } from 'lucide-react';
+import { Bus, MapPin, Loader2, Clock, ArrowRight, Users, ChevronRight, Search } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
