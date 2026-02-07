@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import emailjs from '@emailjs/browser';
 import { 
   ArrowLeft, Save, Plus, Trash2, Clock, MapPin, DollarSign, 
-  Loader2, CheckCircle, AlertCircle, Edit2, X, RotateCcw, Power, QrCode, Calendar, Users, ChevronDown, ChevronUp, BellRing, Bus, MessageCircle
+  Loader2, CheckCircle, AlertCircle, Edit2, X, RotateCcw, Power, QrCode, Calendar, Users, ChevronDown, ChevronUp, BellRing, Bus, MessageCircle, LogOut
 } from 'lucide-react';
 
-const DAYS_OF_WEEK = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
+
 
 // Helper para formatear teléfonos para WhatsApp
 function formatTelefonoWhatsApp(telefono) {
@@ -23,7 +23,10 @@ function formatTelefonoWhatsApp(telefono) {
   return numero;
 }
 
+const DAYS_OF_WEEK = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
+
 export function AdminDashboard() {
+  const navigate = useNavigate();
   // Estados de UI y Datos
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -457,9 +460,17 @@ export function AdminDashboard() {
       <header className="bg-white shadow-sm sticky top-0 z-20">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link to="/" className="text-gray-600 hover:text-blue-600 transition">
-              <ArrowLeft className="w-6 h-6" />
-            </Link>
+            <button 
+              onClick={() => {
+                sessionStorage.removeItem('admin_session');
+                navigate('/');
+              }} 
+              className="bg-red-50 text-red-600 hover:bg-red-100 transition flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-red-100"
+              title="Cerrar Sesión"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden md:inline">Cerrar Sesión</span>
+            </button>
             <h1 className="font-bold text-xl text-gray-900">
               {editingId ? 'Editando Ruta' : 'Gestión de Rutas'}
             </h1>
