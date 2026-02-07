@@ -9,6 +9,20 @@ import {
 
 const DAYS_OF_WEEK = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
 
+// Helper para formatear teléfonos para WhatsApp
+function formatTelefonoWhatsApp(telefono) {
+  if (!telefono) return '';
+  // Limpiar el número
+  let numero = telefono.replace(/[\s\-\(\)]/g, '');
+  
+  // Si no tiene código de país, agregar +52 (México)
+  if (!numero.startsWith('+')) {
+    numero = '+52' + numero;
+  }
+  
+  return numero;
+}
+
 export function AdminDashboard() {
   // Estados de UI y Datos
   const [loading, setLoading] = useState(false);
@@ -139,6 +153,7 @@ export function AdminDashboard() {
                     id,
                     cliente_nombre,
                     cliente_email,
+                    cliente_telefono,
                     codigo_visual,
                     validado
                 )

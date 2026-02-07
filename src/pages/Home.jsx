@@ -1,17 +1,18 @@
-import { useState, useEffect, useRef } from 'react';
-import { Bus, MapPin, Calendar, Search, Loader2, X, Clock, DollarSign, ArrowRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Bus, MapPin, Loader2, Clock, ArrowRight, Users, ChevronRight } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
-const DAYS_OF_WEEK = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
+const DAYS_OF_WEEK_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const DAYS_OF_WEEK_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 export function Home() {
   const navigate = useNavigate();
-  const dateInputRef = useRef(null);
 
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
-  const [date, setDate] = useState('');
+  const [selectedDate, setSelectedDate] = useState(null);
   
   // Estados para datos dinámicos
   const [availableOrigins, setAvailableOrigins] = useState([]);
@@ -19,12 +20,17 @@ export function Home() {
   const [popularRoutes, setPopularRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Estados para días disponibles
+  const [availableDays, setAvailableDays] = useState([]);
+  const [loadingDays, setLoadingDays] = useState(false);
+
   // Estado para el modal
   const [selectedRoute, setSelectedRoute] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
+        setLoading(true);
         const { data, error } = await supabase
           .from('rutas')
           .select('*')
@@ -50,10 +56,107 @@ export function Home() {
     fetchData();
   }, []);
 
+  // Cargar días disponibles cuando se seleccionen origen y destino
+  useEffect(() => {
+    async function fetchAvailableDays() {
+      if (!origin || !destination) {
+        setAvailableDays([]);
+        return;
+      }
+
+      try {
+        setLoadingDays(true);
+        setSelectedDate(null); // Reset selection
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // 1. Buscar rutas que coincidan
+        const { data: routes, error: routeError } = await supabase
+          .from('rutas')
+          .select('*')
+          .eq('activa', true)
+          .ilike('origen', `%${origin}%`)
+          .ilike('destino', `%${destination}%`);
+
+        if (routeError) throw routeError;
+        if (!routes || routes.length === 0) {
+          setAvailableDays([]);
+          return;
+        }
+
+        // 2. Generar próximos días basados en días operativos
+        const daysToShow = [];
+        const daysToGenerate = 30; // Mostrar próximos 30 días
+
+        for (let i = 0; i < daysToGenerate; i++) {
+          const currentDate = new Date();
+          currentDate.setDate(today.getDate() + i);
+          const dayOfWeek = DAYS_OF_WEEK_SHORT[currentDate.getDay()];
+
+          // Buscar rutas que operen ese día
+          const routesForDay = routes.filter(route => 
+            route.dias_operativos && route.dias_operativos.includes(dayOfWeek)
+          );
+
+          if (routesForDay.length > 0) {
+            // Para cada ruta, calcular disponibilidad
+            for (const route of routesForDay) {
+              const dateStr = currentDate.toISOString().split('T')[0];
+              const localDateTimeString = `${dateStr}T${route.hora_salida}:00`;
+              const fechaSalidaISO = new Date(localDateTimeString).toISOString();
+
+              // Consultar viaje específico
+              const { data: tripData } = await supabase
+                .from('viajes')
+                .select('asientos_ocupados')
+                .eq('ruta_id', route.id)
+                .eq('fecha_salida', fechaSalidaISO)
+                .maybeSingle();
+
+              const ocupados = tripData ? tripData.asientos_ocupados : 0;
+              const disponibles = route.capacidad - ocupados;
+
+              if (disponibles > 0) {
+                daysToShow.push({
+                  routeId: route.id,
+                  fecha: dateStr,
+                  dia_semana: DAYS_OF_WEEK_FULL[currentDate.getDay()],
+                  dia_numero: currentDate.getDate(),
+                  mes: MONTHS[currentDate.getMonth()],
+                  hora_salida: route.hora_salida,
+                  asientos_disponibles: disponibles,
+                  asientos_totales: route.capacidad,
+                  precio: route.precio_base,
+                  nombre_ruta: route.nombre
+                });
+              }
+            }
+          }
+        }
+
+        // Ordenar por fecha
+        daysToShow.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+        setAvailableDays(daysToShow.slice(0, 10)); // Mostrar solo los primeros 10
+
+      } catch (error) {
+        console.error('Error al cargar días disponibles:', error);
+      } finally {
+        setLoadingDays(false);
+      }
+    }
+
+    fetchAvailableDays();
+  }, [origin, destination]);
+
+  const handleSelectDay = (day) => {
+    setSelectedDate(day);
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
-    if (origin && destination && date) {
-      navigate(`/resultados?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&date=${encodeURIComponent(date)}`);
+    if (origin && destination && selectedDate) {
+      navigate(`/resultados?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&date=${encodeURIComponent(selectedDate.fecha)}`);
     }
   };
 
@@ -61,21 +164,16 @@ export function Home() {
     if (selectedRoute) {
       setOrigin(selectedRoute.origen);
       setDestination(selectedRoute.destino);
-      setSelectedRoute(null); // Cerrar modal
+      setSelectedRoute(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      
-      // Focus a Fecha (sin validación visual)
-      setTimeout(() => {
-        if (dateInputRef.current) {
-          dateInputRef.current.showPicker?.(); // Intenta abrir el picker nativo
-          dateInputRef.current.focus();
-        }
-      }, 500);
     }
   };
 
+  const canShowDays = origin && destination && !loadingDays;
+  const canSubmit = origin && destination && selectedDate;
+
   return (
-    <div className="min-h-screen relative">
+    <div className="min-h-screen relative bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
@@ -151,33 +249,77 @@ export function Home() {
                 </div>
               </div>
 
-              {/* Date */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Fecha de viaje
-                </label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    ref={dateInputRef} // Referencia para focus automático
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent text-gray-900"
-                    required
-                  />
+              {/* Available Days Section */}
+              {(origin && destination) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Selecciona día de viaje
+                  </label>
+                  
+                  {loadingDays ? (
+                    <div className="flex justify-center items-center py-12 bg-gray-50 rounded-lg border border-gray-200">
+                      <Loader2 className="w-6 h-6 text-blue-600 animate-spin mr-2" />
+                      <span className="text-gray-600">Buscando viajes disponibles...</span>
+                    </div>
+                  ) : availableDays.length === 0 ? (
+                    <div className="py-8 bg-yellow-50 rounded-lg border border-yellow-200 text-center">
+                      <p className="text-yellow-800 font-medium">No hay viajes disponibles para esta ruta</p>
+                      <p className="text-yellow-600 text-sm mt-1">Intenta con otro origen o destino</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-96 overflow-y-auto space-y-2 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                      {availableDays.map((day, index) => (
+                        <button
+                          key={`${day.routeId}-${day.fecha}-${index}`}
+                          type="button"
+                          onClick={() => handleSelectDay(day)}
+                          className={`w-full text-left p-4 rounded-lg border-2 transition-all hover:shadow-md ${
+                            selectedDate?.fecha === day.fecha && selectedDate?.routeId === day.routeId
+                              ? 'border-blue-600 bg-blue-50 shadow-md'
+                              : 'border-gray-200 bg-white hover:border-blue-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-bold text-gray-900 capitalize">{day.dia_semana}</span>
+                                <span className="text-sm text-gray-500">•</span>
+                                <span className="text-sm text-gray-600">{day.dia_numero} de {day.mes}</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-sm text-gray-600">
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-4 h-4" />
+                                  {day.hora_salida}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Users className="w-4 h-4" />
+                                  {day.asientos_disponibles} disponibles
+                                </span>
+                              </div>
+                            </div>
+                            <ChevronRight className={`w-5 h-5 transition-all ${
+                              selectedDate?.fecha === day.fecha ? 'text-blue-600' : 'text-gray-400'
+                            }`} />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
 
               {/* Search Button */}
               <button
                 type="submit"
-                className="w-full bg-blue-600 text-white py-4 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
-                disabled={loading}
+                className={`w-full py-4 rounded-lg font-semibold transition flex items-center justify-center gap-2 shadow-lg ${
+                  canSubmit
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+                disabled={!canSubmit}
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
-                {loading ? 'Cargando rutas...' : 'Buscar Horarios'}
+                <Search className="w-5 h-5" />
+                {canSubmit ? 'Ver Horarios' : 'Selecciona origen, destino y fecha'}
               </button>
             </div>
           </form>
@@ -199,7 +341,7 @@ export function Home() {
               {popularRoutes.map((route) => (
                 <div
                   key={route.id}
-                  onClick={() => setSelectedRoute(route)} // Abre el modal
+                  onClick={() => setSelectedRoute(route)}
                   className="bg-white rounded-xl p-5 shadow-sm hover:shadow-md transition cursor-pointer border border-gray-100 group relative overflow-hidden transform hover:-translate-y-1"
                 >
                   <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition">
@@ -241,115 +383,33 @@ export function Home() {
       {/* MODAL DE DETALLES DE RUTA */}
       {selectedRoute && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-           {/* Backdrop con blur */}
            <div 
              className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
              onClick={() => setSelectedRoute(null)}
            ></div>
 
-           {/* Contenido Modal */}
-           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full relative z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full relative z-10 overflow-hidden p-6">
+              <button 
+                 onClick={() => setSelectedRoute(null)} 
+                 className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-full transition"
+              >
+                 <MapPin className="w-5 h-5 text-gray-600" />
+              </button>
               
-              {/* Header Modal */}
-              <div className="bg-blue-600 p-6 text-white relative">
-                 <button 
-                    onClick={() => setSelectedRoute(null)} 
-                    className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full transition"
-                 >
-                    <X className="w-5 h-5 text-white" />
-                 </button>
-                 
-                 <h3 className="text-sm font-medium text-blue-100 mb-1">Detalles del Viaje</h3>
-                 <div className="flex items-center gap-3 text-2xl font-bold">
-                    <span>{selectedRoute.origen}</span>
-                    <ArrowRight className="w-6 h-6 text-blue-200" />
-                    <span>{selectedRoute.destino}</span>
-                 </div>
-                 <div className="mt-4 inline-flex items-center gap-1 bg-white/10 px-3 py-1 rounded-lg backdrop-blur-md border border-white/20">
-                    <DollarSign className="w-4 h-4 text-green-300" />
-                    <span className="font-bold text-xl">${selectedRoute.precio_base} MXN</span>
-                 </div>
-              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-4">
+                {selectedRoute.origen} → {selectedRoute.destino}
+              </h3>
+              
+              <p className="text-gray-600 mb-6">
+                Haz clic en "Seleccionar" para elegir esta ruta y ver las fechas disponibles.
+              </p>
 
-              {/* Body Modal */}
-              <div className="p-6 space-y-6">
-                 
-                 {/* Días Operativos */}
-                 <div>
-                    <h4 className="text-sm font-semibold text-gray-500 mb-3 uppercase tracking-wider">Días de Salida</h4>
-                    <div className="flex flex-wrap gap-2">
-                       {DAYS_OF_WEEK.map(day => {
-                         const isActive = selectedRoute.dias_operativos?.includes(day);
-                         return (
-                           <div 
-                             key={day}
-                             className={`px-3 py-1 text-sm rounded-lg font-medium border ${
-                               isActive 
-                                 ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                                 : 'bg-gray-50 text-gray-300 border-gray-100'
-                             }`}
-                           >
-                             {day}
-                           </div>
-                         )
-                       })}
-                    </div>
-                 </div>
-
-                 {/* Horarios */}
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                       <p className="text-xs text-gray-400 mb-1">Hora Salida</p>
-                       <p className="font-bold text-gray-900 text-lg flex items-center gap-2">
-                         <Clock className="w-4 h-4 text-blue-500" /> {selectedRoute.hora_salida}
-                       </p>
-                    </div>
-                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                       <p className="text-xs text-gray-400 mb-1">Hora Llegada (Est.)</p>
-                       <p className="font-bold text-gray-900 text-lg flex items-center gap-2">
-                         <Clock className="w-4 h-4 text-gray-400" /> {selectedRoute.hora_llegada}
-                       </p>
-                    </div>
-                 </div>
-
-                 {/* Paradas */}
-                 {selectedRoute.paradas && selectedRoute.paradas.length > 0 && (
-                    <div>
-                       <h4 className="text-sm font-semibold text-gray-500 mb-3 uppercase tracking-wider">Paradas Intermedias</h4>
-                       <ul className="space-y-2">
-                          {selectedRoute.paradas.map((stop, i) => (
-                             <li key={i} className="flex justify-between items-center text-sm border-b border-gray-100 pb-2 last:border-0 hover:bg-gray-50 p-2 rounded transition">
-                                <div className="flex items-center gap-2 text-gray-700">
-                                   <div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
-                                   {stop.name}
-                                </div>
-                                <div className="text-right">
-                                   <span className="block text-gray-900 font-medium">{stop.time}</span>
-                                   {stop.precio > 0 && (
-                                      <span className="text-xs text-gray-500">${stop.precio}</span>
-                                   )}
-                                </div>
-                             </li>
-                          ))}
-                       </ul>
-                    </div>
-                 )}
-              </div>
-
-              {/* Footer Actions */}
-              <div className="p-6 bg-gray-50 border-t border-gray-100">
-                 <button 
-                   onClick={handleSelectRoute}
-                   className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition shadow-lg flex items-center justify-center gap-2 group"
-                 >
-                    <Calendar className="w-5 h-5 group-hover:scale-110 transition" />
-                    Seleccionar Fecha y Reservar
-                 </button>
-                 <p className="text-center text-xs text-gray-400 mt-3">
-                    Al hacer clic, completaremos el formulario por ti
-                 </p>
-              </div>
-
+              <button 
+                onClick={handleSelectRoute}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
+              >
+                Seleccionar Ruta
+              </button>
            </div>
         </div>
       )}
